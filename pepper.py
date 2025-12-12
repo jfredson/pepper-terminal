@@ -1,4 +1,7 @@
 import os
+import json
+from datetime import datetime, timezone
+from pathlib import Path
 from openai import OpenAI
 from openai import APIConnectionError, AuthenticationError, RateLimitError, NotFoundError, BadRequestError
 from rich.console import Console
@@ -19,15 +22,83 @@ You do not hallucinate.
 You speak clearly, concisely, and with warmth.
 """
 
+# ---------- Persistent Memory (local) ----------
+APP_DIR = Path(__file__).resolve().parent
+MEMORY_DIR = APP_DIR / "memory"
+MEMORY_FILE = MEMORY_DIR / "conversation.jsonl"
+
+# How many recent messages to reload into context each run (keeps token cost sane)
+RECALL_MESSAGES = 30
+
+def ensure_memory_dir() -> None:
+    MEMORY_DIR.mkdir(parents=True, exist_ok=True)
+
+def append_event(role: str, content: str) -> None:
+    """Append a single message event to JSONL log."""
+    ensure_memory_dir()
+    event = {
+        "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "role": role,
+        "content": content,
+    }
+    with MEMORY_FILE.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(event, ensure_ascii=False) + "\n")
+
+def load_recent_messages(limit: int) -> list[dict]:
+    """Load last N messages from JSONL log (role/content only)."""
+    if not MEMORY_FILE.exists():
+        return []
+    lines = MEMORY_FILE.read_text(encoding="utf-8").splitlines()
+    tail = lines[-limit:] if limit > 0 else []
+    msgs: list[dict] = []
+    for line in tail:
+        try:
+            event = json.loads(line)
+            role = event.get("role")
+            content = event.get("content")
+            if role in ("system", "user", "assistant") and isinstance(content, str):
+                msgs.append({"role": role, "content": content})
+        except json.JSONDecodeError:
+            # Ignore malformed lines (should be rare)
+            continue
+    return msgs
+
+def clear_memory() -> None:
+    """Delete the JSONL conversation log (if it exists)."""
+    if MEMORY_FILE.exists():
+        MEMORY_FILE.unlink()
+
+def help_text() -> str:
+    return (
+        "Local commands:\n"
+        "  :help   Show this help\n"
+        "  :where  Show the memory file path\n"
+        "  :new    Reset in-session context (does not delete memory file)\n"
+        "  :clear  Delete the local memory file (asks for confirmation)\n"
+        "  exit    Quit\n"
+    )
+
 def main():
     console.print("[bold cyan]Pepper Terminal v0.1[/bold cyan]")
     console.print("Type 'exit' to quit.\n")
 
+    # Start with system prompt, then reload recent conversation
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    messages.extend(load_recent_messages(RECALL_MESSAGES))
 
     while True:
         try:
             user_input = console.input("[bold green]You > [/bold green]")
+            # ----- Local commands (handled before conversation logic) -----
+            if user_input.strip() == ":new":
+                console.print("\n[dim]Starting a fresh in-session context (log remains on disk).[/dim]\n")
+                messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+                continue
+
+            if user_input.strip() == ":where":
+                console.print(f"\n[dim]Memory file: {MEMORY_FILE}[/dim]\n")
+                continue
+
             if user_input.lower() in ("exit", "quit"):
                 console.print("\n[dim]Goodbye.[/dim]")
                 break
@@ -63,6 +134,7 @@ def main():
 
             reply = response.choices[0].message.content
             messages.append({"role": "assistant", "content": reply})
+            append_event("user", user_input)
 
             console.print("\n[bold magenta]Pepper >[/bold magenta]")
             console.print(Markdown(reply))
