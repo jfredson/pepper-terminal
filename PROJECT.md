@@ -3,39 +3,70 @@
 Last updated: 2025-12-12
 
 ## Purpose
-Pepper Terminal is a minimal local terminal client that connects to the OpenAI API for calm, high-resolution conversation, designed to remain understandable and extensible.
+Pepper Terminal is a minimal local terminal client that connects to the OpenAI API for calm, high-resolution conversation. It is designed to remain understandable, inspectable, and extensible over long time horizons.
 
-## Current Status (v0.1)
-- Working: terminal loop, dotenv loading, OpenAI chat call, rich rendering, persistent memory logs
-- Known constraints: API billing required; no persistent memory; no commands/modes
+## Current Status (v0.3)
+Pepper Terminal is fully functional with persistent local memory and a long-term summary layer.
 
-- Persistent memory logs rotate daily under memory/YYYY-MM-DD.jsonl.
-- Startup recall loads last RECALL_MESSAGES messages across RECALL_DAYS daily logs.
+### Working
+- Interactive terminal loop (`pepper.py`)
+- OpenAI API chat completions
+- Rich-rendered assistant output
+- dotenv-based configuration
+- Git + GitHub (SSH)
+- Persistent local memory (JSONL, daily rotation)
+- Cross-day recall (configurable window)
+- Rolling long-term summary layer (`memory/summary.md`)
+- Local command system (`:help`, `:where`, `:new`, `:clear`, `:summary`, `:summarize`)
+- Optional auto-summary updates every N turns
+
+### Known Constraints
+- API billing required
+- No vector search or semantic memory yet
+- Summary updates incur an extra API call
 
 ## How to Run
 1) `cd pepper-terminal`
 2) `source venv/bin/activate`
 3) `python pepper.py`
 
-## Architecture (today)
-### Entry point
-- `pepper.py`: single-file app containing:
-  - system prompt
-  - in-session message history
-  - OpenAI call
-  - terminal I/O formatting
+## Architecture (current)
 
-### Config
-- `.env` (not committed): `OPENAI_API_KEY=...`
-- `.gitignore`: excludes `.env`, `venv/`, caches
+### Entry Point
+- `pepper.py`
+  - system prompt
+  - command handling
+  - OpenAI interaction
+  - memory logging
+  - summary management
+
+### Memory Layers
+1) **Daily Logs**
+   - Stored as `memory/YYYY-MM-DD.jsonl`
+   - Append-only
+   - Logs both user and assistant messages
+
+2) **Rolling Recall**
+   - On startup, loads last `RECALL_MESSAGES`
+   - Spans up to `RECALL_DAYS` most recent log files
+
+3) **Long-Term Summary**
+   - Stored at `memory/summary.md`
+   - Injected into context as a system message
+   - Updated manually (`:summarize`) or automatically (`AUTO_SUMMARIZE_EVERY`)
+
+### Config / Safety
+- `.env` (not committed): API key
+- `.gitignore`: excludes memory, venv, secrets
 
 ## Operational Notes
-- If `.env` isn’t loading, run from repo root or load dotenv with an explicit path.
-- If API returns `insufficient_quota`, enable API billing.
+- Commands are handled before conversation logic and are not logged.
+- Summaries are designed to be stable, factual, and token-efficient.
+- Memory files are private and never committed.
 
-## Roadmap (next)
-- requirements.txt
-- graceful error handling + user-friendly messages
-- persistent memory (JSON or SQLite)
-- command prefixes (e.g., `:help`, `:save`, `:note`)
+## Roadmap (near-term)
+- `:stats` command
+- Session-end auto-summary
+- Memory export (Markdown)
+- Optional SQLite backend
 
