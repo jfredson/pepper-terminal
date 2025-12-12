@@ -9,7 +9,8 @@ Pepper Terminal is a minimal local terminal client that connects to the OpenAI A
 - Working: terminal loop, dotenv loading, OpenAI chat call, rich rendering, persistent memory logs
 - Known constraints: API billing required; no persistent memory; no commands/modes
 
-Persistent memory logs rotate daily under memory/YYYY-MM-DD.jsonl.
+- Persistent memory logs rotate daily under memory/YYYY-MM-DD.jsonl.
+- Startup recall loads last RECALL_MESSAGES messages across RECALL_DAYS daily logs.
 
 ## How to Run
 1) `cd pepper-terminal`

@@ -32,7 +32,8 @@ def memory_file_for_today() -> Path:
     return MEMORY_DIR / f"{today}.jsonl"
 
 # How many recent messages to reload into context each run (keeps token cost sane)
-RECALL_MESSAGES = 30
+RECALL_MESSAGES = 30        # total messages to load into context
+RECALL_DAYS = 7             # how many most recent daily log files to scan
 
 def ensure_memory_dir() -> None:
     MEMORY_DIR.mkdir(parents=True, exist_ok=True)
@@ -49,25 +50,49 @@ def append_event(role: str, content: str) -> None:
     with mem_file.open("a", encoding="utf-8") as f:
         f.write(json.dumps(event, ensure_ascii=False) + "\n")
 
+def recent_memory_files(days: int) -> list[Path]:
+    """Return up to `days` most recent daily JSONL files (sorted oldest->newest)."""
+    ensure_memory_dir()
+    files = sorted(MEMORY_DIR.glob("????-??-??.jsonl"))  # lexicographic sort works for YYYY-MM-DD
+    return files[-days:] if days > 0 else []
+
 def load_recent_messages(limit: int) -> list[dict]:
-    """Load last N messages from JSONL log (role/content only)."""
-    mem_file = memory_file_for_today()
-    if not mem_file.exists():
+    """Load last N messages across the most recent daily JSONL files."""
+    if limit <= 0:
         return []
-    lines = mem_file.read_text(encoding="utf-8").splitlines()
-    tail = lines[-limit:] if limit > 0 else []
-    msgs: list[dict] = []
-    for line in tail:
+
+    files = recent_memory_files(RECALL_DAYS)
+    if not files:
+        return []
+
+    # Read newest files first, newest lines first, then reverse at the end
+    collected: list[dict] = []
+
+    for path in reversed(files):  # newest file first
         try:
-            event = json.loads(line)
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except FileNotFoundError:
+            continue
+
+        for line in reversed(lines):  # newest event first within file
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
             role = event.get("role")
             content = event.get("content")
             if role in ("system", "user", "assistant") and isinstance(content, str):
-                msgs.append({"role": role, "content": content})
-        except json.JSONDecodeError:
-            # Ignore malformed lines (should be rare)
-            continue
-    return msgs
+                collected.append({"role": role, "content": content})
+                if len(collected) >= limit:
+                    break
+
+        if len(collected) >= limit:
+            break
+
+    # We collected newest->oldest; reverse to restore chronological order
+    collected.reverse()
+    return collected
 
 def clear_memory() -> None:
     """Delete the JSONL conversation log (if it exists)."""
@@ -104,7 +129,9 @@ def main():
                 continue
 
             if user_input.strip() == ":where":
-                console.print(f"\n[dim]Memory file: {memory_file_for_today()}[/dim]\n")
+                console.print(
+    f"\n[dim]Today: {memory_file_for_today()}\nRecall: last {RECALL_MESSAGES} msgs across {RECALL_DAYS} day(s)[/dim]\n"
+)
                 continue
 
             if user_input.lower() in ("exit", "quit"):
