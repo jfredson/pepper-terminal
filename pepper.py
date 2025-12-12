@@ -25,7 +25,11 @@ You speak clearly, concisely, and with warmth.
 # ---------- Persistent Memory (local) ----------
 APP_DIR = Path(__file__).resolve().parent
 MEMORY_DIR = APP_DIR / "memory"
-MEMORY_FILE = MEMORY_DIR / "conversation.jsonl"
+
+def memory_file_for_today() -> Path:
+    # Local date-based filename (simple + readable)
+    today = datetime.now().date().isoformat()  # YYYY-MM-DD
+    return MEMORY_DIR / f"{today}.jsonl"
 
 # How many recent messages to reload into context each run (keeps token cost sane)
 RECALL_MESSAGES = 30
@@ -41,14 +45,16 @@ def append_event(role: str, content: str) -> None:
         "role": role,
         "content": content,
     }
-    with MEMORY_FILE.open("a", encoding="utf-8") as f:
+    mem_file = memory_file_for_today()
+    with mem_file.open("a", encoding="utf-8") as f:
         f.write(json.dumps(event, ensure_ascii=False) + "\n")
 
 def load_recent_messages(limit: int) -> list[dict]:
     """Load last N messages from JSONL log (role/content only)."""
-    if not MEMORY_FILE.exists():
+    mem_file = memory_file_for_today()
+    if not mem_file.exists():
         return []
-    lines = MEMORY_FILE.read_text(encoding="utf-8").splitlines()
+    lines = mem_file.read_text(encoding="utf-8").splitlines()
     tail = lines[-limit:] if limit > 0 else []
     msgs: list[dict] = []
     for line in tail:
@@ -65,8 +71,10 @@ def load_recent_messages(limit: int) -> list[dict]:
 
 def clear_memory() -> None:
     """Delete the JSONL conversation log (if it exists)."""
-    if MEMORY_FILE.exists():
-        MEMORY_FILE.unlink()
+    mem_file = memory_file_for_today()
+    if mem_file.exists():
+        mem_file.unlink()
+
 
 def help_text() -> str:
     return (
@@ -74,7 +82,7 @@ def help_text() -> str:
         "  :help   Show this help\n"
         "  :where  Show the memory file path\n"
         "  :new    Reset in-session context (does not delete memory file)\n"
-        "  :clear  Delete the local memory file (asks for confirmation)\n"
+        "  :clear  Delete today's memory file (asks for confirmation)\n"
         "  exit    Quit\n"
     )
 
@@ -96,7 +104,7 @@ def main():
                 continue
 
             if user_input.strip() == ":where":
-                console.print(f"\n[dim]Memory file: {MEMORY_FILE}[/dim]\n")
+                console.print(f"\n[dim]Memory file: {memory_file_for_today()}[/dim]\n")
                 continue
 
             if user_input.lower() in ("exit", "quit"):
