@@ -22,6 +22,21 @@ You do not hallucinate.
 You speak clearly, concisely, and with warmth.
 """
 
+# ------ Load the project file for big picture context ------
+PROJECT_FILE = APP_DIR / "PROJECT.md"
+PROJECT_MAX_CHARS = 6000
+PROJECT_SUMMARY_FILE = MEMORY_DIR / "project_summary.md"
+PROJECT_SUMMARY_MAX_CHARS = 4000
+
+def load_project_charter() -> str:
+    if PROJECT_FILE.exists():
+        txt = PROJECT_FILE.read_text(encoding="utf-8").strip()
+        if len(txt) > PROJECT_MAX_CHARS:
+            txt = txt[:PROJECT_MAX_CHARS]
+        return txt
+    return ""
+
+
 # ---------- Persistent Memory (local) ----------
 APP_DIR = Path(__file__).resolve().parent
 MEMORY_DIR = APP_DIR / "memory"
@@ -130,6 +145,16 @@ def save_summary(text: str) -> None:
         trimmed = trimmed[-SUMMARY_MAX_CHARS:]  # keep most recent portion if oversized
     SUMMARY_FILE.write_text(trimmed + "\n", encoding="utf-8")
 
+def load_project_summary() -> str:
+    if PROJECT_SUMMARY_FILE.exists():
+        return PROJECT_SUMMARY_FILE.read_text(encoding="utf-8").strip()
+    return ""
+
+def save_project_summary(text: str):
+    PROJECT_SUMMARY_FILE.parent.mkdir(parents=True, exist_ok=True)
+    PROJECT_SUMMARY_FILE.write_text(text.strip() + "\n", encoding="utf-8")
+
+
 def update_summary_via_model(client: OpenAI, console: Console, existing: str, recent_msgs: list[dict]) -> str:
     """
     Uses the model to update a rolling summary. This is an extra API call.
@@ -171,6 +196,12 @@ def main():
 
     # Start with system prompt, then reload recent conversation
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+
+# Load project charter
+    charter = load_project_charter()
+    if charter:
+        messages.append({"role": "system", "content": "PROJECT CHARTER (PROJECT.md):\n" + charter})
+
 
     summary = load_summary()
     if summary:
